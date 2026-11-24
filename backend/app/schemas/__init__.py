@@ -8,6 +8,14 @@ from app.schemas.auth import (
     UserRegisterRequest,
     UserResponse,
 )
+from app.schemas.interview import (
+    ActiveQuestionDetailResponse,
+    InterviewCreateRequest,
+    InterviewQuestionResponse,
+    InterviewResponse,
+    NextQuestionRequest,
+    QuestionResponse,
+)
 
 __all__ = [
     "UserRegisterRequest",
@@ -16,4 +24,10 @@ __all__ = [
     "RefreshTokenRequest",
     "LogoutRequest",
     "UserResponse",
+    "InterviewCreateRequest",
+    "InterviewResponse",
+    "QuestionResponse",
+    "InterviewQuestionResponse",
+    "ActiveQuestionDetailResponse",
+    "NextQuestionRequest",
 ]
