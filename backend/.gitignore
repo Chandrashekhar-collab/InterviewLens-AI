@@ -1,0 +1,22 @@
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Local environment configuration
+.env
+.env.local
+
+# Storage uploads and media
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/reports/*
+!storage/reports/.gitkeep
+
+# Python cache & test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
