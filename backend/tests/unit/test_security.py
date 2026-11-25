@@ -78,3 +78,24 @@ def test_tampered_access_token():
 
     with pytest.raises(UnauthorizedException):
         decode_access_token(tampered_token)
+
+
+def test_swagger_security_scheme_is_http_bearer():
+    """Verify OpenAPI security scheme is HTTPBearer (not OAuth2PasswordBearer)."""
+    from app.main import app
+
+    schema = app.openapi()
+    security_schemes = schema.get("components", {}).get("securitySchemes", {})
+
+    assert "HTTPBearer" in security_schemes
+    scheme_def = security_schemes["HTTPBearer"]
+    assert scheme_def["type"] == "http"
+    assert scheme_def["scheme"] == "bearer"
+
+    # Protected endpoint requires HTTPBearer
+    me_endpoint = schema["paths"]["/api/v1/auth/me"]["get"]
+    assert me_endpoint.get("security") == [{"HTTPBearer": []}]
+
+    # Public endpoint does not require security
+    login_endpoint = schema["paths"]["/api/v1/auth/login"]["post"]
+    assert "security" not in login_endpoint

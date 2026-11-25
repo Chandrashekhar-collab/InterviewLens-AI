@@ -9,6 +9,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.interview import Interview
+    from app.models.recording import AudioRecording
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -50,6 +51,12 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     interviews: Mapped[List["Interview"]] = relationship(
         "Interview",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    recordings: Mapped[List["AudioRecording"]] = relationship(
+        "AudioRecording",
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

@@ -1,5 +1,10 @@
 """Pydantic schemas package."""
 
+from app.schemas.audio import (
+    AudioRecordingResponse,
+    SpeechReportResponse,
+    TranscriptResponse,
+)
 from app.schemas.auth import (
     LogoutRequest,
     RefreshTokenRequest,
@@ -30,4 +35,7 @@ __all__ = [
     "InterviewQuestionResponse",
     "ActiveQuestionDetailResponse",
     "NextQuestionRequest",
+    "AudioRecordingResponse",
+    "TranscriptResponse",
+    "SpeechReportResponse",
 ]

@@ -54,6 +54,20 @@ class Settings(BaseSettings):
             return v
         return []
 
+    # Storage & Audio Settings
+    STORAGE_DIR: str = "storage"
+    RECORDINGS_DIR: str = "storage/recordings"
+    MAX_UPLOAD_SIZE_BYTES: int = 25 * 1024 * 1024  # 25 MB default limit
+    ALLOWED_AUDIO_EXTENSIONS: List[str] = [".wav", ".mp3", ".m4a", ".webm"]
+
+    # Speech Analysis Engine Settings
+    WHISPER_MODEL_SIZE: str = "tiny"  # Lightweight for 8GB RAM development
+    WHISPER_DEVICE: str = "cpu"
+    WHISPER_COMPUTE_TYPE: str = "int8"
+    SILENCE_ENERGY_THRESHOLD_DB: float = -35.0  # dB threshold for pause detection
+    MIN_SILENCE_DURATION_SECONDS: float = 0.5   # 500ms min pause duration
+    LONG_PAUSE_DURATION_SECONDS: float = 2.0    # 2s long pause threshold
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

@@ -3,19 +3,22 @@
 from typing import AsyncGenerator
 import uuid
 from fastapi import Depends
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.config import settings
 from app.core.exceptions import UnauthorizedException
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login",
+# HTTPBearer security scheme: presents a simple Bearer token field in Swagger UI
+http_bearer = HTTPBearer(
     auto_error=True,
+    description="Enter your JWT access token directly: e.g. `<access_token>`",
 )
+
+# Backward-compatibility alias
+oauth2_scheme = http_bearer
 
 
 async def get_db_session(
@@ -26,10 +29,11 @@ async def get_db_session(
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(http_bearer),
     db: AsyncSession = Depends(get_db_session),
 ) -> User:
     """Dependency that extracts and authenticates the current user from JWT access token."""
+    token = credentials.credentials
     payload = decode_access_token(token)
     user_id_str = payload.get("sub")
     if not user_id_str:

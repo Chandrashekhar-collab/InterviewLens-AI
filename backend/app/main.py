@@ -14,13 +14,21 @@ from app.core.logging import logger, setup_logging
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan context manager for startup and shutdown procedures."""
     setup_logging()
+    from app.engines.speech.compat import apply_pyav_compatibility_patch
+    apply_pyav_compatibility_patch()
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION} [{settings.APP_ENV}]")
     yield
     logger.info(f"Shutting down {settings.APP_NAME}")
 
 
-def create_application() -> FastAPI:
-    """Create and configure the FastAPI application instance."""
+def create_application(use_lifespan: bool = True) -> FastAPI:
+    """Create and configure the FastAPI application instance.
+
+    Args:
+        use_lifespan: When False, skips the lifespan context manager. Set to
+            False in tests to avoid event-loop conflicts with aiosqlite and
+            pytest-asyncio fixtures.
+    """
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -28,7 +36,7 @@ def create_application() -> FastAPI:
         openapi_url=f"{settings.API_V1_STR}/openapi.json",
         docs_url=f"{settings.API_V1_STR}/docs",
         redoc_url=f"{settings.API_V1_STR}/redoc",
-        lifespan=lifespan,
+        lifespan=lifespan if use_lifespan else None,
     )
 
     # CORS Middleware

@@ -9,6 +9,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.interview_question import InterviewQuestion
+    from app.models.recording import AudioRecording
     from app.models.user import User
 
 
@@ -83,6 +84,12 @@ class Interview(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="InterviewQuestion.order_index",
+    )
+    recordings: Mapped[List["AudioRecording"]] = relationship(
+        "AudioRecording",
+        back_populates="interview",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:

@@ -13,6 +13,8 @@ storage/uploads/*
 !storage/uploads/.gitkeep
 storage/reports/*
 !storage/reports/.gitkeep
+storage/recordings/*
+!storage/recordings/.gitkeep
 
 # Python cache & test artifacts
 __pycache__/
