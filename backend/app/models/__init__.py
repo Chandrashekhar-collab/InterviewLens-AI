@@ -1,5 +1,6 @@
 """SQLAlchemy models package."""
 
+from app.models.answer_evaluation import AnswerEvaluation
 from app.models.interview import Interview
 from app.models.interview_question import InterviewQuestion
 from app.models.question import Question
@@ -15,4 +16,5 @@ __all__ = [
     "InterviewQuestion",
     "AudioRecording",
     "SpeechAnalysis",
+    "AnswerEvaluation",
 ]

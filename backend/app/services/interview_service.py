@@ -141,6 +141,7 @@ class InterviewService:
         await db.refresh(interview)
 
         return ActiveQuestionDetailResponse(
+            interview_question_id=iq.id,
             order_index=1,
             total_questions=interview.total_questions,
             is_last_question=(interview.total_questions == 1),
@@ -171,6 +172,7 @@ class InterviewService:
             raise NotFoundException("No active question found for this interview step")
 
         return ActiveQuestionDetailResponse(
+            interview_question_id=current_iq.id,
             order_index=current_iq.order_index,
             total_questions=interview.total_questions,
             is_last_question=(current_iq.order_index == interview.total_questions),
@@ -200,10 +202,14 @@ class InterviewService:
         )
 
         prev_difficulty = None
+        effective_previous_score = data.previous_answer_score
         if current_iq:
             current_iq.is_answered = True
             if data.previous_answer_score is not None:
                 current_iq.score = data.previous_answer_score
+            elif current_iq.score is not None:
+                # Reuse score persisted by the Milestone 4 answer evaluation engine
+                effective_previous_score = current_iq.score
             if current_iq.question:
                 prev_difficulty = current_iq.question.difficulty
 
@@ -219,7 +225,7 @@ class InterviewService:
         next_question = await AdaptiveQuestionEngine.select_next_question(
             db=db,
             interview=interview,
-            previous_score=data.previous_answer_score,
+            previous_score=effective_previous_score,
             previous_difficulty=prev_difficulty,
         )
 
@@ -234,6 +240,7 @@ class InterviewService:
         await db.commit()
 
         return ActiveQuestionDetailResponse(
+            interview_question_id=new_iq.id,
             order_index=next_order_index,
             total_questions=interview.total_questions,
             is_last_question=(next_order_index == interview.total_questions),

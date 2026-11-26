@@ -86,6 +86,7 @@ class InterviewQuestionResponse(BaseModel):
 class ActiveQuestionDetailResponse(BaseModel):
     """Details of the currently active question presented to the candidate."""
 
+    interview_question_id: Optional[uuid.UUID] = None
     order_index: int
     total_questions: int
     is_last_question: bool

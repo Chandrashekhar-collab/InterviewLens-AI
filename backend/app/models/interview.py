@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.answer_evaluation import AnswerEvaluation
     from app.models.interview_question import InterviewQuestion
     from app.models.recording import AudioRecording
     from app.models.user import User
@@ -87,6 +88,12 @@ class Interview(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     recordings: Mapped[List["AudioRecording"]] = relationship(
         "AudioRecording",
+        back_populates="interview",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    answer_evaluations: Mapped[List["AnswerEvaluation"]] = relationship(
+        "AnswerEvaluation",
         back_populates="interview",
         cascade="all, delete-orphan",
         passive_deletes=True,

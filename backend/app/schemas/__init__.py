@@ -13,6 +13,13 @@ from app.schemas.auth import (
     UserRegisterRequest,
     UserResponse,
 )
+from app.schemas.evaluation import (
+    AnswerEvaluationResponse,
+    AudioAnswerEvaluationRequest,
+    InterviewEvaluationHistoryResponse,
+    STARComponentResult,
+    TextAnswerEvaluationRequest,
+)
 from app.schemas.interview import (
     ActiveQuestionDetailResponse,
     InterviewCreateRequest,
@@ -38,4 +45,9 @@ __all__ = [
     "AudioRecordingResponse",
     "TranscriptResponse",
     "SpeechReportResponse",
+    "TextAnswerEvaluationRequest",
+    "AudioAnswerEvaluationRequest",
+    "STARComponentResult",
+    "AnswerEvaluationResponse",
+    "InterviewEvaluationHistoryResponse",
 ]

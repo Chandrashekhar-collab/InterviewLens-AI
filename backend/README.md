@@ -57,6 +57,17 @@ Welcome to the **InterviewLens AI** backend service. InterviewLens AI is an adap
   * Strictly restricted to acoustic frequency measurements; never makes personality or emotional inferences.
 * **Strict Separation of Concerns**: Speech delivery mechanics (speed, fluency, pauses, pitch) are analyzed independently of answer-content correctness.
 
+### Milestone 4: Answer Evaluation & Interview Feedback Engine
+* **Deterministic Evaluation Pipeline (`app/engines/answer_evaluation/`)**:
+  * Modular, explainable Python evaluation covering preprocessing, keyword/concept coverage, rubric clause coverage, prompt relevance, explanation completeness, STAR structure, weighted scoring, and evidence-backed feedback generation.
+  * *Transparency note*: Deterministic keyword matching and text overlap measure concept presence and rubric alignment; they do not prove deep technical correctness.
+* **Category-Specific Scoring & STAR Method**:
+  * Applies **STAR (Situation, Task, Action, Result)** evaluation exclusively to `behavioral` questions (`applicable=True`), while `technical`, `hr`, `communication`, and `presentation` questions use general logical structure scoring (`star_evaluation=null`).
+* **Audio Transcript & Adaptive Engine Integration**:
+  * Evaluates completed audio transcripts via `audio_recording_id` without duplicating transcript text or altering Milestone 3 speech-delivery metrics.
+  * Persists `overall_score` to `InterviewQuestion.score` so `POST /api/v1/interviews/{id}/questions/next` can automatically adapt difficulty when `previous_answer_score` is omitted.
+  * Enforces one evaluation record per question (`answer_evaluations.interview_question_id` is unique); repeated submissions are rejected with `400 Bad Request` unless `re_evaluate=true` is explicitly provided, which **overwrites the existing evaluation record in place** (prior evaluation revisions are not retained) and updates `InterviewQuestion.score` to the latest score for adaptive progression.
+
 ---
 
 ## 📁 Architecture Overview
@@ -77,7 +88,8 @@ backend/
 │   │           ├── auth.py                 # Register, login, refresh, logout, profile
 │   │           ├── health.py               # Database & system health checks
 │   │           ├── interviews.py           # Creation, starting, current, next, complete
-│   │           └── audio.py                # Audio upload, analysis, metadata, transcript, report
+│   │           ├── audio.py                # Audio upload, analysis, metadata, transcript, report
+│   │           └── evaluations.py          # Text/audio answer evaluation & interview history
 │   ├── core/
 │   │   ├── security.py                     # Argon2id hasher, JWT encoder/decoder
 │   │   ├── exceptions.py                   # Custom exceptions & RFC-compliant handler
@@ -87,6 +99,16 @@ backend/
 │   │   ├── session.py                      # Async engine & sessionmaker (PRAGMA foreign keys)
 │   │   └── seed.py                         # Question bank seeder utility
 │   ├── engines/
+│   │   ├── answer_evaluation/
+│   │   │   ├── preprocessor.py             # Whitespace, tokenization & stopword normalization
+│   │   │   ├── keyword_evaluator.py        # Expected keyword & concept coverage
+│   │   │   ├── rubric_evaluator.py         # Ideal answer rubric clause matching
+│   │   │   ├── relevance_evaluator.py      # Prompt alignment & off-topic detection
+│   │   │   ├── completeness_evaluator.py   # Depth, sentence & reasoning-marker scoring
+│   │   │   ├── star_evaluator.py           # STAR evaluation for behavioral questions
+│   │   │   ├── scoring.py                  # Category-specific weights & overall score
+│   │   │   ├── feedback_generator.py       # Evidence-backed strengths & suggestions
+│   │   │   └── evaluator.py                # AnswerEvaluationPipeline orchestrator
 │   │   ├── question_gen/
 │   │   │   ├── adaptive_engine.py          # Performance-based adaptive difficulty selector
 │   │   │   └── question_bank.py            # Curated seed question bank with rubrics
@@ -105,15 +127,18 @@ backend/
 │   │   ├── question.py                     # Question bank entity
 │   │   ├── interview_question.py           # Sequence and score junction model
 │   │   ├── recording.py                    # Audio recording metadata & file model
-│   │   └── speech_analysis.py              # Speech delivery metrics model
+│   │   ├── speech_analysis.py              # Speech delivery metrics model
+│   │   └── answer_evaluation.py            # Answer evaluation & feedback model
 │   ├── schemas/
 │   │   ├── auth.py                         # Authentication Pydantic v2 schemas
 │   │   ├── interview.py                    # Interview & question Pydantic v2 schemas
-│   │   └── audio.py                        # Audio & speech report Pydantic v2 schemas
+│   │   ├── audio.py                        # Audio & speech report Pydantic v2 schemas
+│   │   └── evaluation.py                   # Answer evaluation & feedback Pydantic v2 schemas
 │   └── services/
 │       ├── auth_service.py                 # Authentication & token rotation logic
 │       ├── interview_service.py            # Interview lifecycle & adaptive sequencing
-│       └── audio_service.py                # Chunked upload, validation, cleanup & analysis
+│       ├── audio_service.py                # Chunked upload, validation, cleanup & analysis
+│       └── evaluation_service.py           # Answer evaluation, ownership & adaptive sync
 ├── storage/
 │   └── recordings/                         # Secure audio recordings directory (gitignored)
 ├── tests/
@@ -121,11 +146,13 @@ backend/
 │   ├── unit/
 │   │   ├── test_security.py                # Security & token unit tests
 │   │   ├── test_adaptive_engine.py         # Adaptive difficulty & category unit tests
-│   │   └── test_speech_engine.py           # Speed, filler, silence, pitch, compat unit tests
+│   │   ├── test_speech_engine.py           # Speed, filler, silence, pitch, compat unit tests
+│   │   └── test_answer_evaluation.py       # Preprocessing, rubric, STAR, scoring unit tests
 │   └── integration/
 │       ├── test_auth_api.py                # Authentication endpoint integration tests
 │       ├── test_interviews_api.py          # Interview progression & state guard tests
-│       └── test_audio_api.py               # Audio upload, analysis, cleanup & report tests
+│       ├── test_audio_api.py               # Audio upload, analysis, cleanup & report tests
+│       └── test_evaluations_api.py         # Answer evaluation & adaptive integration tests
 ├── .env.example                            # Environment variable template
 ├── alembic.ini                             # Migration configuration
 ├── pytest.ini                              # Pytest discovery settings
@@ -185,7 +212,7 @@ Run the complete test suite against an isolated in-memory database:
 python -m pytest -q
 ```
 
-All 48 unit and integration tests pass (`48 passed` in the latest verified run) without downloading remote models.
+The unit and integration test suite runs against an isolated in-memory SQLite database without downloading remote models.
 
 ---
 
@@ -402,6 +429,102 @@ curl -X GET "http://127.0.0.1:8000/api/v1/audio/e2f1b4a3-7c8d-4912-b5e3-1a2b3c4d
 curl -X GET "http://127.0.0.1:8000/api/v1/audio/e2f1b4a3-7c8d-4912-b5e3-1a2b3c4d5e6f/report" \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
+
+---
+
+### Milestone 4: Answer Evaluation & Feedback API Examples
+
+#### 1. Evaluate a Candidate Text Answer
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/evaluations/text" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "interview_id": "7b58c5f2-9cb8-4a9f-93d1-92b45e7f21a4",
+    "interview_question_id": "f1e2d3c4-5678-90ab-cdef-1234567890ab",
+    "answer_text": "SQL relational databases enforce ACID properties with rigid schemas and transactions, whereas NoSQL databases use BASE consistency and horizontal scaling for unstructured workloads."
+  }'
+```
+**Response (201 Created):**
+```json
+{
+  "id": "9a8b7c6d-1234-4321-abcd-0987654321ef",
+  "user_id": "e9b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+  "interview_id": "7b58c5f2-9cb8-4a9f-93d1-92b45e7f21a4",
+  "interview_question_id": "f1e2d3c4-5678-90ab-cdef-1234567890ab",
+  "audio_recording_id": null,
+  "answer_source": "text",
+  "submitted_answer_text": "SQL relational databases enforce ACID properties with rigid schemas and transactions, whereas NoSQL databases use BASE consistency and horizontal scaling for unstructured workloads.",
+  "relevance_score": 88.5,
+  "keyword_coverage_score": 71.43,
+  "rubric_coverage_score": 76.0,
+  "completeness_score": 68.5,
+  "structure_score": 60.0,
+  "overall_score": 75.21,
+  "dimension_weights": {
+    "relevance": 0.2,
+    "keyword_coverage": 0.3,
+    "rubric_coverage": 0.3,
+    "completeness": 0.15,
+    "structure": 0.05
+  },
+  "matched_keywords": ["ACID", "relational", "schema", "horizontal scaling", "NoSQL"],
+  "missing_concepts": ["transactions", "consistency"],
+  "strengths": [
+    "Addressed relevant concepts: ACID, relational, schema, horizontal scaling, NoSQL.",
+    "Response stays focused on the core question prompt.",
+    "Covered key evaluation criteria from the answer rubric."
+  ],
+  "improvement_suggestions": [
+    "Incorporate missing expected concepts where relevant: transactions, consistency."
+  ],
+  "star_evaluation": null,
+  "summary": "Evaluated technical response with an overall heuristic score of 75.2/100 (relevance 88.5, keywords 71.4, rubric 76.0, completeness 68.5).",
+  "evaluation_method": "heuristic-v1.0",
+  "created_at": "2026-11-25T20:30:00Z",
+  "updated_at": "2026-11-25T20:30:00Z"
+}
+```
+
+#### 2. Evaluate a Completed Audio Recording Transcript
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/evaluations/audio/e2f1b4a3-7c8d-4912-b5e3-1a2b3c4d5e6f" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"re_evaluate": false}'
+```
+
+#### 3. Retrieve a Single Evaluation
+```bash
+curl -X GET "http://127.0.0.1:8000/api/v1/evaluations/9a8b7c6d-1234-4321-abcd-0987654321ef" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+#### 4. Retrieve Interview Evaluation History
+```bash
+curl -X GET "http://127.0.0.1:8000/api/v1/evaluations/interview/7b58c5f2-9cb8-4a9f-93d1-92b45e7f21a4" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+---
+
+## 📊 Answer Evaluation Methodology & Scoring Weights
+
+`AnswerEvaluationPipeline` (`heuristic-v1.0`) evaluates each answer out of `100.0` using five deterministic dimensions:
+
+| Category | Relevance | Keyword Coverage | Rubric Coverage | Completeness | Structure |
+|---|---|---|---|---|---|
+| **technical** (and **architecture**) | 0.20 | 0.30 | 0.30 | 0.15 | 0.05 (general) |
+| **behavioral** | 0.20 | 0.15 | 0.20 | 0.15 | 0.30 (STAR) |
+| **hr** | 0.25 | 0.15 | 0.25 | 0.20 | 0.15 (general) |
+| **communication** | 0.25 | 0.15 | 0.20 | 0.20 | 0.20 (general) |
+| **presentation** | 0.20 | 0.20 | 0.25 | 0.15 | 0.20 (general) |
+
+* **STAR Method (`STAREvaluator`)**: Applied only to `behavioral` questions (`Situation` 20%, `Task` 20%, `Action` 35%, `Result` 25%). Non-behavioral categories (including `technical` and `architecture`, which maps to `technical` weights) return `star_evaluation: null`.
+* **Known Limitations of Heuristic Evaluation**:
+  * Keyword matching and rubric token overlap detect whether expected concepts appear, not whether technical claims or code trade-offs are factually accurate.
+  * Synonyms or paraphrased concepts not listed in `Question.keywords` or `ideal_answer_rubric` may receive lower coverage scores.
+  * STAR detection relies on linguistic cues and may miss implicit Situation/Task/Action/Result framing.
 
 ---
 

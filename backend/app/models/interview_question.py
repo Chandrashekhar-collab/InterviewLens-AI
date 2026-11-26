@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.answer_evaluation import AnswerEvaluation
     from app.models.interview import Interview
     from app.models.question import Question
 
@@ -50,6 +51,13 @@ class InterviewQuestion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     question: Mapped["Question"] = relationship(
         "Question",
         back_populates="interview_questions",
+    )
+    answer_evaluation: Mapped[Optional["AnswerEvaluation"]] = relationship(
+        "AnswerEvaluation",
+        back_populates="interview_question",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:

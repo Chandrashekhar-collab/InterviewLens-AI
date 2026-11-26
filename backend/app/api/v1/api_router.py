@@ -1,7 +1,7 @@
 """API v1 master router aggregating all sub-routers."""
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import audio, auth, health, interviews
+from app.api.v1.endpoints import audio, auth, evaluations, health, interviews
 
 api_router = APIRouter()
 
@@ -10,3 +10,4 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(interviews.router)
 api_router.include_router(audio.router)
+api_router.include_router(evaluations.router)
