@@ -270,3 +270,24 @@ class InterviewService:
         await db.commit()
         await db.refresh(interview)
         return interview
+
+    @classmethod
+    async def abandon_interview(
+        cls,
+        db: AsyncSession,
+        interview_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Interview:
+        """Transition an active or draft interview to 'abandoned' status."""
+        interview = await cls.get_interview_by_id(db=db, interview_id=interview_id, user_id=user_id)
+
+        if interview.status == "abandoned":
+            return interview
+
+        if interview.status == "completed":
+            raise BadRequestException("Cannot abandon an interview that is already completed")
+
+        interview.status = "abandoned"
+        await db.commit()
+        await db.refresh(interview)
+        return interview

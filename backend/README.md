@@ -87,7 +87,7 @@ backend/
 │   │       └── endpoints/
 │   │           ├── auth.py                 # Register, login, refresh, logout, profile
 │   │           ├── health.py               # Database & system health checks
-│   │           ├── interviews.py           # Creation, starting, current, next, complete
+│   │           ├── interviews.py           # Creation, start, current, next, complete, abandon, report
 │   │           ├── audio.py                # Audio upload, analysis, metadata, transcript, report
 │   │           └── evaluations.py          # Text/audio answer evaluation & interview history
 │   ├── core/
@@ -133,12 +133,14 @@ backend/
 │   │   ├── auth.py                         # Authentication Pydantic v2 schemas
 │   │   ├── interview.py                    # Interview & question Pydantic v2 schemas
 │   │   ├── audio.py                        # Audio & speech report Pydantic v2 schemas
-│   │   └── evaluation.py                   # Answer evaluation & feedback Pydantic v2 schemas
+│   │   ├── evaluation.py                   # Answer evaluation & feedback Pydantic v2 schemas
+│   │   └── report.py                       # Consolidated performance report schemas
 │   └── services/
 │       ├── auth_service.py                 # Authentication & token rotation logic
 │       ├── interview_service.py            # Interview lifecycle & adaptive sequencing
 │       ├── audio_service.py                # Chunked upload, validation, cleanup & analysis
-│       └── evaluation_service.py           # Answer evaluation, ownership & adaptive sync
+│       ├── evaluation_service.py           # Answer evaluation, ownership & adaptive sync
+│       └── report_service.py               # Consolidated interview performance report builder
 ├── storage/
 │   └── recordings/                         # Secure audio recordings directory (gitignored)
 ├── tests/
@@ -412,6 +414,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/audio/e2f1b4a3-7c8d-4912-b5e3-1a2b3c4
   "max_pitch_hz": 268.0,
   "pitch_variation_hz": 24.1,
   "pitch_status": "measured",
+  "fluency_score": 77.86,
   "processing_status": "completed",
   "error_message": null
 }
@@ -525,6 +528,72 @@ curl -X GET "http://127.0.0.1:8000/api/v1/evaluations/interview/7b58c5f2-9cb8-4a
   * Keyword matching and rubric token overlap detect whether expected concepts appear, not whether technical claims or code trade-offs are factually accurate.
   * Synonyms or paraphrased concepts not listed in `Question.keywords` or `ideal_answer_rubric` may receive lower coverage scores.
   * STAR detection relies on linguistic cues and may miss implicit Situation/Task/Action/Result framing.
+
+---
+
+## 📋 Consolidated Performance Report & Abandon Endpoint
+
+* **`POST /api/v1/interviews/{interview_id}/abandon`**: Transitions a `draft` or `in_progress` interview to `abandoned` (returns `400 Bad Request` if already `completed`).
+* **`GET /api/v1/interviews/{interview_id}/report`**: Compiles a single consolidated report combining:
+  * `interview` metadata and overall completion counts (`total_questions_asked`, `total_questions_answered`, `total_questions_evaluated`)
+  * `overall_interview_score` and `average_fluency_score`
+  * Per-question `question_reports` (`submitted_answer`, `answer_evaluation`, `speech_analysis` including `fluency_score`)
+  * Aggregated `strengths`, `weaknesses`, and `improvement_suggestions`
+
+---
+
+## 🗄️ Database Schema Summary (SQLite + Alembic)
+
+| Table | Purpose | Key Relationships & Constraints |
+|---|---|---|
+| `users` | Registered candidate accounts & Argon2id password hashes | Unique `email` |
+| `refresh_tokens` | SHA-256 hashed opaque refresh tokens for rotation & revocation | FK `user_id` → `users.id` (`CASCADE`), unique `token_hash` |
+| `interviews` | Interview session configuration & lifecycle status | FK `user_id` → `users.id` (`CASCADE`) |
+| `questions` | Curated question bank with rubrics, keywords & expected duration | Indexed by `category`, `difficulty` |
+| `interview_questions` | Ordered questions presented per interview & persisted score | FKs `interview_id` (`CASCADE`), `question_id` (`RESTRICT`) |
+| `audio_recordings` | Uploaded audio metadata & UUID storage path | FKs `user_id`, `interview_id`, `interview_question_id` |
+| `speech_analyses` | Whisper transcript, WPM, fillers, pauses & Praat pitch metrics | Unique FK `recording_id` → `audio_recordings.id` (`CASCADE`) |
+| `answer_evaluations` | Deterministic content scores, STAR results & feedback | Unique FK `interview_question_id` (`CASCADE`), optional `audio_recording_id` (`SET NULL`) |
+
+---
+
+## 🔌 Frontend–Backend Integration Guide
+
+* **API Base URL**: `http://127.0.0.1:8000/api/v1` (CORS pre-configured for `localhost:3000`, `localhost:5173`, `127.0.0.1:3000`, `127.0.0.1:5173`).
+* **Authentication Flow**:
+  1. `POST /auth/register` → `POST /auth/login` returns `access_token` (15 min) and `refresh_token` (7 days).
+  2. Send `Authorization: Bearer <access_token>` on all protected requests.
+  3. On `401 Unauthorized`, call `POST /auth/refresh` with `{"refresh_token": "..."}` to rotate tokens; on logout, call `POST /auth/logout`.
+* **Error Envelope**: Domain exceptions return uniform JSON: `{"success": false, "data": null, "error": {"code": "...", "message": "...", "details": ...}}`.
+* **Interview & Recording Flow**:
+  1. `POST /interviews` → `POST /interviews/{id}/start` (save `interview_question_id` from response).
+  2. Upload mic audio via `POST /audio/upload` (`multipart/form-data` with `interview_id`, `interview_question_id`, `file`) → `POST /audio/{recording_id}/analyze`.
+  3. Evaluate transcript via `POST /evaluations/audio/{recording_id}` (or submit typed answer via `POST /evaluations/text`).
+  4. Advance via `POST /interviews/{id}/questions/next` with `{}` (uses persisted `InterviewQuestion.score` automatically).
+  5. Conclude via `POST /interviews/{id}/complete` and display `GET /interviews/{id}/report`.
+
+---
+
+## 🎓 Live Exhibition Demonstration Guide (14-Step Flow)
+
+1. Verify backend health (`GET /api/v1/health`) and Swagger UI (`/api/v1/docs`).
+2. Register (`POST /api/v1/auth/register`) and log in (`POST /api/v1/auth/login`), then authorize Swagger/frontend with the `access_token`.
+3. Create a 5-question `mixed`, `medium` interview for `software_engineer` (`POST /api/v1/interviews`).
+4. Start the interview (`POST /api/v1/interviews/{id}/start`) to present Question 1 and record `interview_question_id`.
+5. Record or select a sample WAV/MP3/M4A/WebM answer and upload via `POST /api/v1/audio/upload`.
+6. Run `POST /api/v1/audio/{recording_id}/analyze` to transcribe with `faster-whisper` (`tiny`, CPU `int8`) and compute WPM, fillers, pauses, pitch, and `fluency_score`.
+7. Evaluate the transcript via `POST /api/v1/evaluations/audio/{recording_id}` (or fallback text mode via `POST /api/v1/evaluations/text`).
+8. Advance via `POST /api/v1/interviews/{id}/questions/next` (`{}`) and show adaptive difficulty adjustment (`>= 75` up, `50–74.9` maintain, `< 50` down).
+9. Complete the session (`POST /api/v1/interviews/{id}/complete`) and open `GET /api/v1/interviews/{id}/report` to present the consolidated performance report.
+
+---
+
+## 🔧 Troubleshooting Guide
+
+* **`alembic upgrade head` fails or tables missing**: Run from `backend/` with the virtual environment activated (`python -m alembic upgrade head`).
+* **First Whisper transcription takes longer**: The `tiny` model (~75 MB) is downloaded once to the local HuggingFace/CTranslate2 cache on first transcription and reused offline thereafter.
+* **422 on Swagger `/auth/login`**: Use the Authorize modal with a `Bearer` token obtained from `POST /api/v1/auth/login` JSON body (`email` + `password`).
+* **Audio upload rejected (`400`)**: Ensure file extension (`.wav`, `.mp3`, `.m4a`, `.webm`), magic bytes, and `MAX_UPLOAD_SIZE_BYTES` (25 MB default) are valid.
 
 ---
 

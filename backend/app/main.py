@@ -1,6 +1,7 @@
 """FastAPI application entry point and lifespan configuration."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from app.core.logging import logger, setup_logging
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan context manager for startup and shutdown procedures."""
     setup_logging()
+    Path(settings.RECORDINGS_DIR).mkdir(parents=True, exist_ok=True)
     from app.engines.speech.compat import apply_pyav_compatibility_patch
     apply_pyav_compatibility_patch()
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION} [{settings.APP_ENV}]")

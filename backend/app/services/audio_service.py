@@ -375,23 +375,37 @@ class AudioService:
         )
 
     @classmethod
-    async def get_report(
+    def compute_fluency_score(cls, analysis: SpeechAnalysis) -> Optional[float]:
+        """Compute a deterministic 0-100 speech fluency score from pace, fillers, and long pauses."""
+        if analysis.processing_status != "completed" or analysis.words_per_minute is None:
+            return None
+
+        score = 100.0
+        wpm = analysis.words_per_minute
+        if wpm == 0.0:
+            return 0.0
+        if wpm < 110.0:
+            score -= min(30.0, (110.0 - wpm) * 0.4)
+        elif wpm > 160.0:
+            score -= min(25.0, (wpm - 160.0) * 0.35)
+
+        filler_wpm = analysis.filler_words_per_minute or 0.0
+        score -= min(35.0, filler_wpm * 3.0)
+
+        long_pauses = analysis.long_pause_count or 0
+        score -= min(25.0, long_pauses * 5.0)
+
+        return round(max(0.0, min(100.0, score)), 2)
+
+    @classmethod
+    def build_speech_report(
         cls,
-        db: AsyncSession,
         recording_id: uuid.UUID,
-        user_id: uuid.UUID,
+        analysis: SpeechAnalysis,
     ) -> SpeechReportResponse:
-        """Retrieve complete structured speech delivery report."""
-        recording = await cls.get_recording(db=db, recording_id=recording_id, user_id=user_id)
-
-        if not recording.speech_analysis:
-            raise NotFoundException(
-                "Speech delivery report not available. Recording has not been analyzed yet."
-            )
-
-        analysis = recording.speech_analysis
+        """Build a SpeechReportResponse from a SpeechAnalysis ORM entity."""
         return SpeechReportResponse(
-            recording_id=recording.id,
+            recording_id=recording_id,
             transcription=analysis.transcription,
             detected_language=analysis.detected_language,
             word_count=analysis.word_count,
@@ -409,6 +423,24 @@ class AudioService:
             max_pitch_hz=analysis.max_pitch_hz,
             pitch_variation_hz=analysis.pitch_variation_hz,
             pitch_status=analysis.pitch_status,
+            fluency_score=cls.compute_fluency_score(analysis),
             processing_status=analysis.processing_status,
             error_message=analysis.error_message,
         )
+
+    @classmethod
+    async def get_report(
+        cls,
+        db: AsyncSession,
+        recording_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> SpeechReportResponse:
+        """Retrieve complete structured speech delivery report."""
+        recording = await cls.get_recording(db=db, recording_id=recording_id, user_id=user_id)
+
+        if not recording.speech_analysis:
+            raise NotFoundException(
+                "Speech delivery report not available. Recording has not been analyzed yet."
+            )
+
+        return cls.build_speech_report(recording.id, recording.speech_analysis)

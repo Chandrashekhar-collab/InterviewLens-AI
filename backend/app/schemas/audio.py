@@ -70,6 +70,9 @@ class SpeechReportResponse(BaseModel):
     pitch_variation_hz: Optional[float] = None
     pitch_status: str = "pending"
 
+    # Derived Fluency Score (0-100)
+    fluency_score: Optional[float] = None
+
     # Status
     processing_status: str
     error_message: Optional[str] = None

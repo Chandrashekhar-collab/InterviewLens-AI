@@ -598,6 +598,99 @@ async def test_re_evaluation_rollback_and_adaptive_latest_score(client: AsyncCli
 
 
 @pytest.mark.asyncio
+async def test_abandon_interview_and_consolidated_performance_report(client: AsyncClient, tmp_path):
+    """Verify abandon endpoint guards and consolidated interview performance report generation."""
+    headers_a = await get_authenticated_headers(client, "report_owner@example.com", "Report Owner")
+    headers_b = await get_authenticated_headers(client, "report_other@example.com", "Other User")
+
+    # 1. Create and abandon a draft interview
+    draft_int = await client.post(
+        "/api/v1/interviews",
+        json={"title": "Draft Abandon Test", "interview_type": "technical", "total_questions": 2},
+        headers=headers_a,
+    )
+    draft_id = draft_int.json()["id"]
+    abandon_res = await client.post(f"/api/v1/interviews/{draft_id}/abandon", headers=headers_a)
+    assert abandon_res.status_code == 200
+    assert abandon_res.json()["status"] == "abandoned"
+
+    # 2. Create, start, answer with audio + text, complete, and fetch consolidated report
+    create_int = await client.post(
+        "/api/v1/interviews",
+        json={"title": "Exhibition Demo Interview", "interview_type": "mixed", "total_questions": 2},
+        headers=headers_a,
+    )
+    interview_id = create_int.json()["id"]
+    q1 = await client.post(f"/api/v1/interviews/{interview_id}/start", headers=headers_a)
+    iq_1_id = q1.json()["interview_question_id"]
+
+    # Upload + analyze audio for Q1, then evaluate transcript
+    wav_bytes = generate_synthetic_wav_bytes(duration_s=2.0)
+    with patch("app.services.audio_service.settings.RECORDINGS_DIR", str(tmp_path)):
+        up_res = await client.post(
+            "/api/v1/audio/upload",
+            data={"interview_id": interview_id, "interview_question_id": iq_1_id},
+            files={"file": ("q1.wav", io.BytesIO(wav_bytes), "audio/wav")},
+            headers=headers_a,
+        )
+    rec_id = up_res.json()["id"]
+
+    mock_tx = {
+        "transcription": "At my previous job I led a cache migration and improved latency by 40 percent.",
+        "detected_language": "en",
+        "segments": [{"start": 0.0, "end": 2.0, "text": "At my previous job..."}],
+        "transcription_status": "completed",
+        "transcription_duration_seconds": 0.25,
+        "error_message": None,
+    }
+    with patch("app.engines.speech.analyzer.SpeechTranscriber.transcribe", return_value=mock_tx):
+        an_res = await client.post(f"/api/v1/audio/{rec_id}/analyze", headers=headers_a)
+        assert an_res.status_code == 200
+        assert an_res.json()["fluency_score"] is not None
+
+    ev1 = await client.post(f"/api/v1/evaluations/audio/{rec_id}", headers=headers_a)
+    assert ev1.status_code == 201
+
+    q2 = await client.post(f"/api/v1/interviews/{interview_id}/questions/next", json={}, headers=headers_a)
+    iq_2_id = q2.json()["interview_question_id"]
+    ev2 = await client.post(
+        "/api/v1/evaluations/text",
+        json={
+            "interview_id": interview_id,
+            "interview_question_id": iq_2_id,
+            "answer_text": "SQL enforces ACID transactions and schemas while NoSQL scales horizontally.",
+        },
+        headers=headers_a,
+    )
+    assert ev2.status_code == 201
+
+    comp = await client.post(f"/api/v1/interviews/{interview_id}/complete", headers=headers_a)
+    assert comp.status_code == 200
+
+    # Completed interview cannot be abandoned
+    bad_abandon = await client.post(f"/api/v1/interviews/{interview_id}/abandon", headers=headers_a)
+    assert bad_abandon.status_code == 400
+
+    # Fetch consolidated performance report
+    report_res = await client.get(f"/api/v1/interviews/{interview_id}/report", headers=headers_a)
+    assert report_res.status_code == 200
+    rep = report_res.json()
+    assert rep["interview"]["id"] == interview_id
+    assert rep["total_questions_asked"] == 2
+    assert rep["total_questions_answered"] == 2
+    assert rep["total_questions_evaluated"] == 2
+    assert rep["overall_interview_score"] is not None
+    assert rep["average_fluency_score"] is not None
+    assert len(rep["question_reports"]) == 2
+    assert rep["question_reports"][0]["speech_analysis"] is not None
+    assert rep["question_reports"][1]["answer_evaluation"] is not None
+
+    # Cross-user access to report or abandon -> 403
+    assert (await client.get(f"/api/v1/interviews/{interview_id}/report", headers=headers_b)).status_code == 403
+    assert (await client.post(f"/api/v1/interviews/{interview_id}/abandon", headers=headers_b)).status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_multi_question_history_and_no_sensitive_fields_exposed(client: AsyncClient):
     """Verify multi-question history ordering, average score, and absence of sensitive fields."""
     headers = await get_authenticated_headers(client, "hist_eval@example.com", "History User")

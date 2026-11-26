@@ -246,3 +246,33 @@ def test_speech_pipeline_failure_no_misleading_zero_scores(tmp_path):
         assert results["total_filler_words"] is None
         assert results["filler_words_per_minute"] is None
         assert "metadata_errors" in results["error_message"]
+
+
+def test_fluency_score_calculation():
+    """Verify deterministic fluency_score calculation and failed-status None guard."""
+    from types import SimpleNamespace
+    from app.services.audio_service import AudioService
+
+    ideal = SimpleNamespace(
+        processing_status="completed",
+        words_per_minute=135.0,
+        filler_words_per_minute=0.0,
+        long_pause_count=0,
+    )
+    disfluent = SimpleNamespace(
+        processing_status="completed",
+        words_per_minute=75.0,
+        filler_words_per_minute=8.0,
+        long_pause_count=3,
+    )
+    failed = SimpleNamespace(
+        processing_status="failed",
+        words_per_minute=None,
+        filler_words_per_minute=None,
+        long_pause_count=0,
+    )
+
+    assert AudioService.compute_fluency_score(ideal) == 100.0
+    disfluent_score = AudioService.compute_fluency_score(disfluent)
+    assert disfluent_score is not None and 0.0 <= disfluent_score < 60.0
+    assert AudioService.compute_fluency_score(failed) is None

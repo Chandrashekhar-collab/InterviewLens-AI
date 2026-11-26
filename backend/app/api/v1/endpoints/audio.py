@@ -72,28 +72,7 @@ async def analyze_recording(
         recording_id=recording_id,
         user_id=current_user.id,
     )
-    return SpeechReportResponse(
-        recording_id=recording_id,
-        transcription=analysis.transcription,
-        detected_language=analysis.detected_language,
-        word_count=analysis.word_count,
-        speaking_duration_seconds=analysis.speaking_duration_seconds,
-        words_per_minute=analysis.words_per_minute,
-        total_filler_words=analysis.total_filler_words,
-        filler_words_breakdown=analysis.filler_words_breakdown or {},
-        filler_words_per_minute=analysis.filler_words_per_minute,
-        pause_count=analysis.pause_count,
-        total_silence_seconds=analysis.total_silence_seconds,
-        average_pause_seconds=analysis.average_pause_seconds,
-        long_pause_count=analysis.long_pause_count,
-        average_pitch_hz=analysis.average_pitch_hz,
-        min_pitch_hz=analysis.min_pitch_hz,
-        max_pitch_hz=analysis.max_pitch_hz,
-        pitch_variation_hz=analysis.pitch_variation_hz,
-        pitch_status=analysis.pitch_status,
-        processing_status=analysis.processing_status,
-        error_message=analysis.error_message,
-    )
+    return AudioService.build_speech_report(recording_id, analysis)
 
 
 @router.get(

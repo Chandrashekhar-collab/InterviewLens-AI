@@ -28,6 +28,10 @@ from app.schemas.interview import (
     NextQuestionRequest,
     QuestionResponse,
 )
+from app.schemas.report import (
+    InterviewPerformanceReportResponse,
+    QuestionPerformanceItem,
+)
 
 __all__ = [
     "UserRegisterRequest",
@@ -50,4 +54,6 @@ __all__ = [
     "STARComponentResult",
     "AnswerEvaluationResponse",
     "InterviewEvaluationHistoryResponse",
+    "QuestionPerformanceItem",
+    "InterviewPerformanceReportResponse",
 ]

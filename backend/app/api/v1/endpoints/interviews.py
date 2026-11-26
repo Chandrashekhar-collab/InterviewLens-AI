@@ -13,7 +13,9 @@ from app.schemas.interview import (
     InterviewResponse,
     NextQuestionRequest,
 )
+from app.schemas.report import InterviewPerformanceReportResponse
 from app.services.interview_service import InterviewService
+from app.services.report_service import ReportService
 
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
 
@@ -226,4 +228,58 @@ async def complete_interview(
         completed_at=interview.completed_at,
         created_at=interview.created_at,
         questions_answered_count=sum(1 for q in interview.interview_questions if q.is_answered),
+    )
+
+
+@router.post(
+    "/{interview_id}/abandon",
+    response_model=InterviewResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Abandon a draft or in-progress interview session",
+)
+async def abandon_interview(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> InterviewResponse:
+    """Transition a draft or in-progress interview to 'abandoned' status."""
+    interview = await InterviewService.abandon_interview(
+        db=db,
+        interview_id=interview_id,
+        user_id=current_user.id,
+    )
+    return InterviewResponse(
+        id=interview.id,
+        user_id=interview.user_id,
+        title=interview.title,
+        target_role=interview.target_role,
+        interview_type=interview.interview_type,
+        difficulty_level=interview.difficulty_level,
+        experience_level=interview.experience_level,
+        total_questions=interview.total_questions,
+        status=interview.status,
+        current_question_index=interview.current_question_index,
+        started_at=interview.started_at,
+        completed_at=interview.completed_at,
+        created_at=interview.created_at,
+        questions_answered_count=sum(1 for q in interview.interview_questions if q.is_answered),
+    )
+
+
+@router.get(
+    "/{interview_id}/report",
+    response_model=InterviewPerformanceReportResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get consolidated interview performance report",
+)
+async def get_interview_report(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> InterviewPerformanceReportResponse:
+    """Return a consolidated performance report combining questions, answers, evaluations, and speech metrics."""
+    return await ReportService.generate_interview_report(
+        db=db,
+        interview_id=interview_id,
+        user_id=current_user.id,
     )
